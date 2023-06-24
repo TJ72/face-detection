@@ -1,18 +1,76 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { Color } from "three";
-import { Canvas } from "@react-three/fiber";
-import Avatar from "./components/avatar";
+import {
+  FaceLandmarker,
+  FaceLandmarkerOptions,
+  FilesetResolver,
+} from "@mediapipe/tasks-vision";
+import { Color, Euler, Matrix4 } from "three";
+import { Canvas, useFrame, useGraph } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
+
+const options: FaceLandmarkerOptions = {
+  baseOptions: {
+    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+    delegate: "GPU",
+  },
+  numFaces: 1,
+  runningMode: "VIDEO",
+  outputFaceBlendshapes: true,
+  outputFacialTransformationMatrixes: true,
+};
+
+let faceLandmarker: FaceLandmarker;
+let lastVideoTime = -1;
+let blendshapes: any[] = [];
+let rotation: Euler;
+let headMesh: any;
 
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const initializeFaceDetector = async () => {
+    const vision = await FilesetResolver.forVisionTasks(
+      // path/to/wasm/root
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+    );
+
+    faceLandmarker = await FaceLandmarker.createFromOptions(vision, options);
+  };
+
+  const renderLoop = () => {
+    const nowInMs = Date.now();
+    if (lastVideoTime !== videoRef.current!.currentTime) {
+      lastVideoTime = videoRef.current!.currentTime;
+      const faceLandmarkerResult = faceLandmarker.detectForVideo(
+        videoRef.current!,
+        nowInMs
+      );
+      if (
+        faceLandmarkerResult.faceBlendshapes &&
+        faceLandmarkerResult.faceBlendshapes.length > 0 &&
+        faceLandmarkerResult.faceBlendshapes[0].categories
+      ) {
+        blendshapes = faceLandmarkerResult.faceBlendshapes[0].categories;
+
+        const matrix = new Matrix4().fromArray(
+          faceLandmarkerResult.facialTransformationMatrixes![0].data
+        );
+        rotation = new Euler().setFromRotationMatrix(matrix);
+      }
+    }
+
+    window.requestAnimationFrame(renderLoop);
+  };
+
   useEffect(() => {
+    initializeFaceDetector();
     if (videoRef.current) {
       navigator.mediaDevices
         .getUserMedia({ video: true })
         .then((stream) => {
           videoRef.current!.srcObject = stream;
+          videoRef.current!.addEventListener("loadedmetadata", renderLoop);
         })
         .catch((err) => {
           console.error(err);
@@ -41,4 +99,21 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+function Avatar() {
+  const avatar = useGLTF(
+    "https://models.readyplayer.me/649408117e9186ff7e412163.glb?morphTarget=ARKit&textureAtlas=1024"
+  );
+  const { nodes } = useGraph(avatar.scene);
+
+  useEffect(() => {
+    headMesh = nodes.Wolf3D_Avatar;
+  }, [nodes]);
+
+  useFrame((_, delta) => {
+    nodes.Head.rotation.set(rotation.x, rotation.y, rotation.z);
+  });
+
+  return <primitive object={avatar.scene} position={[0, -1.65, 4]} />;
 }
