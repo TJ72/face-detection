@@ -38,14 +38,15 @@ export default function Home() {
     faceLandmarker = await FaceLandmarker.createFromOptions(vision, options);
   };
 
-  const renderLoop = () => {
-    const nowInMs = Date.now();
+  const renderLoop = async () => {
+    let nowInMs = Date.now();
     if (lastVideoTime !== videoRef.current!.currentTime) {
       lastVideoTime = videoRef.current!.currentTime;
       const faceLandmarkerResult = faceLandmarker.detectForVideo(
         videoRef.current!,
         nowInMs
       );
+
       if (
         faceLandmarkerResult.faceBlendshapes &&
         faceLandmarkerResult.faceBlendshapes.length > 0 &&
@@ -70,7 +71,7 @@ export default function Home() {
         .getUserMedia({ video: true })
         .then((stream) => {
           videoRef.current!.srcObject = stream;
-          videoRef.current!.addEventListener("loadedmetadata", renderLoop);
+          videoRef.current!.addEventListener("loadeddata", renderLoop);
         })
         .catch((err) => {
           console.error(err);
@@ -111,8 +112,27 @@ function Avatar() {
     headMesh = nodes.Wolf3D_Avatar;
   }, [nodes]);
 
-  useFrame((_, delta) => {
-    nodes.Head.rotation.set(rotation.x, rotation.y, rotation.z);
+  useFrame(() => {
+    if (headMesh?.morphTargetInfluences && blendshapes.length > 0) {
+      blendshapes.forEach((element) => {
+        let index = headMesh.morphTargetDictionary[element.categoryName];
+        if (index >= 0) {
+          headMesh.morphTargetInfluences[index] = element.score;
+        }
+      });
+
+      nodes.Head.rotation.set(rotation.x, rotation.y, rotation.z);
+      nodes.Neck.rotation.set(
+        rotation.x / 5 + 0.3,
+        rotation.y / 5,
+        rotation.z / 5
+      );
+      nodes.Spine2.rotation.set(
+        rotation.x / 10,
+        rotation.y / 10,
+        rotation.z / 10
+      );
+    }
   });
 
   return <primitive object={avatar.scene} position={[0, -1.65, 4]} />;
