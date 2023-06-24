@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useRef } from "react";
 import {
+  Category,
   FaceLandmarker,
   FaceLandmarkerOptions,
   FilesetResolver,
 } from "@mediapipe/tasks-vision";
-import { Color, Euler, Matrix4 } from "three";
+import { Color, Euler, Matrix4, SkinnedMesh } from "three";
 import { Canvas, useFrame, useGraph } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 
@@ -22,9 +23,9 @@ const options: FaceLandmarkerOptions = {
 
 let faceLandmarker: FaceLandmarker;
 let lastVideoTime = -1;
-let blendshapes: any[] = [];
+let blendshapes: Category[] = [];
 let rotation: Euler;
-let headMesh: any;
+let headMesh: SkinnedMesh;
 
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -104,20 +105,22 @@ export default function Home() {
 
 function Avatar() {
   const avatar = useGLTF(
-    "https://models.readyplayer.me/649408117e9186ff7e412163.glb?morphTarget=ARKit&textureAtlas=1024"
+    "https://models.readyplayer.me/649408117e9186ff7e412163.glb?morphTargets=ARKit&textureAtlas=1024"
   );
   const { nodes } = useGraph(avatar.scene);
 
   useEffect(() => {
-    headMesh = nodes.Wolf3D_Avatar;
+    headMesh = nodes.Wolf3D_Avatar as SkinnedMesh;
   }, [nodes]);
 
   useFrame(() => {
-    if (headMesh?.morphTargetInfluences && blendshapes.length > 0) {
+    if (headMesh.morphTargetInfluences && blendshapes.length > 0) {
+      console.log("headMesh", headMesh);
+      console.log("blendshapes", blendshapes);
       blendshapes.forEach((element) => {
-        let index = headMesh.morphTargetDictionary[element.categoryName];
+        const index = headMesh.morphTargetDictionary![element.categoryName];
         if (index >= 0) {
-          headMesh.morphTargetInfluences[index] = element.score;
+          headMesh.morphTargetInfluences![index] = element.score;
         }
       });
 
