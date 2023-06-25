@@ -1,14 +1,14 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Category,
   FaceLandmarker,
   FaceLandmarkerOptions,
   FilesetResolver,
 } from "@mediapipe/tasks-vision";
-import { Color, Euler, Matrix4, SkinnedMesh } from "three";
-import { Canvas, useFrame, useGraph } from "@react-three/fiber";
-import { useGLTF } from "@react-three/drei";
+import { Color, Euler, Matrix4 } from "three";
+import { Canvas } from "@react-three/fiber";
+import Avatar from "./components/avatar";
 
 const options: FaceLandmarkerOptions = {
   baseOptions: {
@@ -21,14 +21,12 @@ const options: FaceLandmarkerOptions = {
   outputFacialTransformationMatrixes: true,
 };
 
-let faceLandmarker: FaceLandmarker;
-let lastVideoTime = -1;
-let blendshapes: Category[] = [];
-let rotation: Euler;
-let headMesh: SkinnedMesh;
-
 export default function Home() {
+  const [blendshapes, setBlendshape] = useState<Category[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const faceLandmarker = useRef<FaceLandmarker | null>(null);
+  const lastVideoTime = useRef<number>(-1);
+  const [rotation, setRotation] = useState<Euler>(new Euler());
 
   const initializeFaceDetector = async () => {
     const vision = await FilesetResolver.forVisionTasks(
@@ -36,14 +34,17 @@ export default function Home() {
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
     );
 
-    faceLandmarker = await FaceLandmarker.createFromOptions(vision, options);
+    faceLandmarker.current = await FaceLandmarker.createFromOptions(
+      vision,
+      options
+    );
   };
 
   const renderLoop = async () => {
-    let nowInMs = Date.now();
-    if (lastVideoTime !== videoRef.current!.currentTime) {
-      lastVideoTime = videoRef.current!.currentTime;
-      const faceLandmarkerResult = faceLandmarker.detectForVideo(
+    const nowInMs = Date.now();
+    if (lastVideoTime.current !== videoRef.current!.currentTime) {
+      lastVideoTime.current = videoRef.current!.currentTime;
+      const faceLandmarkerResult = faceLandmarker.current!.detectForVideo(
         videoRef.current!,
         nowInMs
       );
@@ -53,12 +54,12 @@ export default function Home() {
         faceLandmarkerResult.faceBlendshapes.length > 0 &&
         faceLandmarkerResult.faceBlendshapes[0].categories
       ) {
-        blendshapes = faceLandmarkerResult.faceBlendshapes[0].categories;
+        setBlendshape(faceLandmarkerResult.faceBlendshapes[0].categories);
 
         const matrix = new Matrix4().fromArray(
           faceLandmarkerResult.facialTransformationMatrixes![0].data
         );
-        rotation = new Euler().setFromRotationMatrix(matrix);
+        setRotation(new Euler().setFromRotationMatrix(matrix));
       }
     }
 
@@ -96,47 +97,9 @@ export default function Home() {
             color={new Color(0, 1, 0)}
             intensity={0.5}
           />
-          <Avatar />
+          <Avatar blendshapes={blendshapes} rotation={rotation} />
         </Canvas>
       </div>
     </main>
   );
-}
-
-function Avatar() {
-  const avatar = useGLTF(
-    "https://models.readyplayer.me/649408117e9186ff7e412163.glb?morphTargets=ARKit&textureAtlas=1024"
-  );
-  const { nodes } = useGraph(avatar.scene);
-
-  useEffect(() => {
-    headMesh = nodes.Wolf3D_Avatar as SkinnedMesh;
-  }, [nodes]);
-
-  useFrame(() => {
-    if (headMesh.morphTargetInfluences && blendshapes.length > 0) {
-      console.log("headMesh", headMesh);
-      console.log("blendshapes", blendshapes);
-      blendshapes.forEach((element) => {
-        const index = headMesh.morphTargetDictionary![element.categoryName];
-        if (index >= 0) {
-          headMesh.morphTargetInfluences![index] = element.score;
-        }
-      });
-
-      nodes.Head.rotation.set(rotation.x, rotation.y, rotation.z);
-      nodes.Neck.rotation.set(
-        rotation.x / 5 + 0.3,
-        rotation.y / 5,
-        rotation.z / 5
-      );
-      nodes.Spine2.rotation.set(
-        rotation.x / 10,
-        rotation.y / 10,
-        rotation.z / 10
-      );
-    }
-  });
-
-  return <primitive object={avatar.scene} position={[0, -1.65, 4]} />;
 }
